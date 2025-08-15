@@ -31,8 +31,8 @@ from dots_ocr.parser import DotsOCRParser
 
 # ==================== Configuration ====================
 DEFAULT_CONFIG = {
-    'ip': "127.0.0.1",
-    'port_vllm': 8000,
+    'ip': "192.168.200.2",
+    'port_vllm': 80,
     'min_pixels': MIN_PIXELS,
     'max_pixels': MAX_PIXELS,
     'test_images_dir': "./assets/showcase_origin",
@@ -550,8 +550,8 @@ def create_gradio_interface():
                 gr.Markdown("### ⚙️ Prompt & Actions")
                 prompt_mode = gr.Dropdown(
                     label="Select Prompt",
-                    choices=["prompt_layout_all_en", "prompt_layout_only_en", "prompt_ocr"],
-                    value="prompt_layout_all_en",
+                    choices=["完全识别", "布局识别", "文字识别"],
+                    value="完全识别",
                 )
                 
                 # Display current prompt content

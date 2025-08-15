@@ -20,9 +20,9 @@ class DotsOCRParser:
     """
     
     def __init__(self, 
-            ip='localhost',
-            port=8000,
-            model_name='model',
+            ip='192.168.200.2',
+            port=80,
+            model_name='衡云·灵眸',
             temperature=0.1,
             top_p=1.0,
             max_completion_tokens=16384,
