@@ -167,28 +167,36 @@ def post_process_cells(
     Returns:
         A list of post-processed cells.
     """
+    print(f"BP0")
     assert isinstance(cells, list) and len(cells) > 0 and isinstance(cells[0], dict)
+    print(f"BP1")
     min_pixels = min_pixels or MIN_PIXELS
     max_pixels = max_pixels or MAX_PIXELS
     original_width, original_height = origin_image.size
 
     input_height, input_width = smart_resize(input_height, input_width, min_pixels=min_pixels, max_pixels=max_pixels)
-    
+    print(f"BP2")
     scale_x = input_width / original_width
     scale_y = input_height / original_height
     
     cells_out = []
     for cell in cells:
+        print(f"BPi1")
         bbox = cell['bbox']
+        print(f"BPi2")
         bbox_resized = [
             int(float(bbox[0]) / scale_x), 
             int(float(bbox[1]) / scale_y),
             int(float(bbox[2]) / scale_x), 
             int(float(bbox[3]) / scale_y)
         ]
+        print(f"BPi3")
         cell_copy = cell.copy()
+        print(f"BPi4")
         cell_copy['bbox'] = bbox_resized
+        print(f"BPi5")
         cells_out.append(cell_copy)
+        print(f"BPi6")
     
     return cells_out
 
@@ -200,13 +208,20 @@ def is_legal_bbox(cells):
     return True
 
 def post_process_output(response, prompt_mode, origin_image, input_image, min_pixels=None, max_pixels=None):
-    if prompt_mode in ["prompt_ocr", "prompt_table_html", "prompt_table_latex", "prompt_formula_latex"]:
+    print(f"开始post_process_output")
+    if prompt_mode in ["文字识别", "prompt_table_html", "prompt_table_latex", "prompt_formula_latex"]:
         return response
 
     json_load_failed = False
-    cells = response
+    # 
+    # cells = response
+    cells = response.strip().removeprefix("```json").removesuffix("```").strip()
+
     try:
+        print(f"输出提示模式: {prompt_mode}")
+        print(f"输出响应: {cells}")
         cells = json.loads(cells)
+        print(f"单元加载成功")
         cells = post_process_cells(
             origin_image, 
             cells,
@@ -215,12 +230,14 @@ def post_process_output(response, prompt_mode, origin_image, input_image, min_pi
             min_pixels=min_pixels,
             max_pixels=max_pixels
         )
+        print(f"单元处理成功")
         return cells, False
     except Exception as e:
         print(f"cells post process error: {e}, when using {prompt_mode}")
         json_load_failed = True
 
     if json_load_failed:
+        print(f"输出失败: {json_load_failed}")
         cleaner = OutputCleaner()
         response_clean = cleaner.clean_model_output(cells)
         if isinstance(response_clean, list):

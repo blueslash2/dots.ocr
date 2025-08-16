@@ -172,7 +172,7 @@ class DotsOCRParser:
         }
         if source == 'pdf':
             save_name = f"{save_name}_page_{page_idx}"
-        if prompt_mode in ['prompt_layout_all_en', 'prompt_layout_only_en', 'prompt_grounding_ocr']:
+        if prompt_mode in ['完全识别', '布局识别', '选定文字识别']:
             cells, filtered = post_process_output(
                 response, 
                 prompt_mode, 
@@ -181,7 +181,7 @@ class DotsOCRParser:
                 min_pixels=min_pixels, 
                 max_pixels=max_pixels,
                 )
-            if filtered and prompt_mode != 'prompt_layout_only_en':  # model output json failed, use filtered process
+            if filtered and prompt_mode != '布局识别':  # model output json failed, use filtered process
                 json_file_path = os.path.join(save_dir, f"{save_name}.json")
                 with open(json_file_path, 'w', encoding="utf-8") as w:
                     json.dump(response, w, ensure_ascii=False)
@@ -219,7 +219,7 @@ class DotsOCRParser:
                     'layout_info_path': json_file_path,
                     'layout_image_path': image_layout_path,
                 })
-                if prompt_mode != "prompt_layout_only_en":  # no text md when detection only
+                if prompt_mode != "布局识别":  # no text md when detection only
                     md_content = layoutjson2md(origin_image, cells, text_key='text')
                     md_content_no_hf = layoutjson2md(origin_image, cells, text_key='text', no_page_hf=True) # used for clean output or metric of omnidocbench、olmbench 
                     md_file_path = os.path.join(save_dir, f"{save_name}.md")
@@ -294,7 +294,7 @@ class DotsOCRParser:
     def parse_file(self, 
         input_path, 
         output_dir="", 
-        prompt_mode="prompt_layout_all_en",
+        prompt_mode="完全识别",
         bbox=None,
         fitz_preprocess=False
         ):
@@ -337,7 +337,7 @@ def main():
     )
     
     parser.add_argument(
-        "--prompt", choices=prompts, type=str, default="prompt_layout_all_en",
+        "--prompt", choices=prompts, type=str, default="完全识别",
         help="prompt to query the model, different prompts for different tasks"
     )
     parser.add_argument(
