@@ -18,6 +18,8 @@ from pathlib import Path
 from PIL import Image
 import requests
 import shutil # Import shutil for cleanup
+os.environ['PYPANDOC_PANDOC'] = '/usr/local/bin/pandoc'
+import pypandoc  
 
 # Local tool imports
 from dots_ocr.utils import dict_promptmode_to_prompt
@@ -291,7 +293,7 @@ def parse_pdf_with_high_level_api(parser, pdf_path, prompt_mode):
         raise e
 
 # ==================== Core Processing Function ====================
-def process_image_inference(session_state, test_image_input, file_input,
+def process_image_inference(session_state, file_input, #test_image_input, file_input,
                           prompt_mode, server_ip, server_port, min_pixels, max_pixels,
                           fitz_preprocess=False
                           ):
@@ -323,7 +325,7 @@ def process_image_inference(session_state, test_image_input, file_input,
     dots_parser.min_pixels = min_pixels
     dots_parser.max_pixels = max_pixels
     
-    input_file_path = file_input if file_input else test_image_input
+    input_file_path = file_input #if file_input else test_image_input
     
     if not input_file_path:
         return None, "Please upload image/PDF file or select test image", "", "", gr.update(value=None), None, "", session_state
@@ -348,7 +350,7 @@ def process_image_inference(session_state, test_image_input, file_input,
             })
             
             total_elements = len(pdf_result['combined_cells_data'])
-            info_text = f"**PDF Information:**\n- Total Pages: {pdf_result['total_pages']}\n- Server: {current_config['ip']}:{current_config['port_vllm']}\n- Total Detected Elements: {total_elements}\n- Session ID: {pdf_result['session_id']}"
+            info_text = f"**PDF文件数据:**\n- 总页数: {pdf_result['total_pages']}\n- 总分块数: {total_elements}\n- Session ID: {pdf_result['session_id']}"
             
             current_page_layout_image = preview_image
             current_page_json = ""
@@ -362,18 +364,25 @@ def process_image_inference(session_state, test_image_input, file_input,
                     except:
                         current_page_json = str(first_result['cells_data'])
 
-            download_zip_path = None
-            if pdf_result['temp_dir']:
-                download_zip_path = os.path.join(pdf_result['temp_dir'], f"layout_results_{pdf_result['session_id']}.zip")
-                with zipfile.ZipFile(download_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(pdf_result['temp_dir']):
-                        for file in files:
-                            if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), pdf_result['temp_dir']))
+            #download_zip_path = None
+            #if pdf_result['temp_dir']:
+            #    download_zip_path = os.path.join(pdf_result['temp_dir'], f"layout_results_{pdf_result['session_id']}.zip")
+            #    with zipfile.ZipFile(download_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            #        for root, _, files in os.walk(pdf_result['temp_dir']):
+            #            for file in files:
+            #                if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), pdf_result['temp_dir']))
+            download_docx_path = None  
+            if pdf_result['combined_md_content']:  
+                download_docx_path = create_docx_from_markdown(  
+                    pdf_result['combined_md_content'],   
+                    pdf_result['session_id'],   
+                    pdf_result['temp_dir']  
+                ) 
 
             return (
                 current_page_layout_image, info_text, pdf_result['combined_md_content'] or "No markdown content generated",
                 pdf_result['combined_md_content'] or "No markdown content generated",
-                gr.update(value=download_zip_path, visible=bool(download_zip_path)), page_info, current_page_json, session_state
+                gr.update(value=download_docx_path, visible=bool(download_docx_path)), page_info, current_page_json, session_state
             )
         
         else: # Image processing
@@ -405,14 +414,21 @@ def process_image_inference(session_state, test_image_input, file_input,
             
             current_json = json.dumps(parse_result['cells_data'], ensure_ascii=False, indent=2) if parse_result['cells_data'] else ""
             
-            download_zip_path = None
-            if parse_result['temp_dir']:
-                download_zip_path = os.path.join(parse_result['temp_dir'], f"layout_results_{parse_result['session_id']}.zip")
-                with zipfile.ZipFile(download_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    for root, _, files in os.walk(parse_result['temp_dir']):
-                        for file in files:
-                            if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), parse_result['temp_dir']))
-            
+            #download_zip_path = None
+            #if parse_result['temp_dir']:
+            #    download_zip_path = os.path.join(parse_result['temp_dir'], f"layout_results_{parse_result['session_id']}.zip")
+            #    with zipfile.ZipFile(download_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            #        for root, _, files in os.walk(parse_result['temp_dir']):
+            #            for file in files:
+            #                if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), parse_result['temp_dir']))
+            download_docx_path = None  
+            if parse_result['md_content']:  
+                download_docx_path = create_docx_from_markdown(  
+                    parse_result['md_content'],   
+                    parse_result['session_id'],   
+                    parse_result['temp_dir']  
+                )
+
             return (
                 parse_result['layout_image'], info_text, parse_result['md_content'] or "No markdown content generated",
                 md_content_raw, gr.update(value=download_zip_path, visible=bool(download_zip_path)),
@@ -441,12 +457,12 @@ def clear_all_data(session_state):
         None,  # Clear file input
         "",    # Clear test image selection
         None,  # Clear result image
-        "Waiting for processing results...",  # Reset info display
-        "## Waiting for processing results...",  # Reset Markdown display
-        "🕐 Waiting for parsing result...",    # Clear raw Markdown text
+        "正在识别，请稍侯结果...",  # Reset info display
+        "## 正在识别，请稍候结果...",  # Reset Markdown display
+        "🕐 正在识别，请稍候结果...",    # Clear raw Markdown text
         gr.update(visible=False),  # Hide download button
         "<div id='page_info_box'>0 / 0</div>",  # Reset page info
-        "🕐 Waiting for parsing result...",     # Clear current page JSON
+        "🕐 正在识别，请稍候结果...",     # Clear current page JSON
         new_session_state
     )
 
@@ -454,12 +470,161 @@ def update_prompt_display(prompt_mode):
     """Updates the prompt display content"""
     return dict_promptmode_to_prompt[prompt_mode]
 
+def _convert_html_tables_to_md(md_text: str) -> str:
+    """
+    把 md_text 里的 <table>...</table> 块转换为 Pandoc 可用的 pipe table，
+    其余内容保持不变。
+    """
+    table_pattern = re.compile(r'<table.*?>.*?</table>', flags=re.DOTALL | re.IGNORECASE)
+
+    def _single_table_to_md(html: str) -> str:
+        # 临时 .html 文件让 Pandoc 读
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as f:
+            f.write(html)
+            tmp = f.name
+        try:
+            # html -> markdown_strict (pipe table)
+            md = pypandoc.convert_file(tmp, to='markdown_strict', format='html')
+            return md.strip()
+        finally:
+            os.unlink(tmp)
+
+    # 逐段替换
+    return table_pattern.sub(lambda m: _single_table_to_md(m.group(0)), md_text)
+
+def wrap_html_tables(markdown_content: str) -> str:
+    """
+    将 markdown_content 中的 <table>...</table> 包成：
+    ```{=html}
+    <table>...</table>
+    ```
+    """
+    # 正则：捕获 <table ...> 到 </table> 之间的全部内容（非贪婪）
+    table_re = re.compile(r'(<table\b[^>]*>.*?</table>)', flags=re.DOTALL | re.IGNORECASE)
+
+    def wrap_one(match: re.Match) -> str:
+        html = match.group(1)
+        return f'```{{=html}}\n{html}\n```'
+
+    return table_re.sub(wrap_one, markdown_content)
+
+def add_borders(html: str) -> str:
+    # 给 table 加外框
+    html = re.sub(r'<table\b', r'<table style="border-collapse:collapse;border:1px solid black"', html, flags=re.I)
+    # 给所有 th / td 加内框
+    #html = re.sub(r'<(/?[th|td])\b', r'<\1 style="border:1px solid black"', html, flags=re.I)
+    html = re.sub(r'<(/?(?:th|td))\b', r'<\1 style="border:1px solid black"', html, flags=re.I)
+    return html
+
+def _add_table_borders_docx(docx_path: str):
+    # 给每张表加边框：优先套用内置样式“Table Grid”，
+    # 若样式不存在则直接写入 <w:tblBorders>
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    def _set_tbl_borders(tbl, color="000000", size=4, val="single"):
+        tblPr = tbl._element.tblPr
+        # 移除已有 <w:tblBorders>
+        for el in tblPr.findall(qn('w:tblBorders')):
+            tblPr.remove(el)
+        borders = OxmlElement('w:tblBorders')
+        for edge in ('top','left','bottom','right','insideH','insideV'):
+            e = OxmlElement(f'w:{edge}')
+            e.set(qn('w:val'), val)
+            e.set(qn('w:sz'), str(size))   # 1/8 pt; 4≈0.5pt
+            e.set(qn('w:space'), "0")
+            e.set(qn('w:color'), color)
+            borders.append(e)
+        tblPr.append(borders)
+
+    doc = Document(docx_path)
+    for tbl in doc.tables:
+        try:
+            tbl.style = 'Table Grid'  # 大多数 Word/模板自带此样式
+        except Exception:
+            _set_tbl_borders(tbl)     # 兜底：直接写 OOXML
+    doc.save(docx_path)
+
+def process_with_fade_effect(*args):  
+    # 先更新图像为淡化状态  
+    yield gr.update(elem_classes=["processing"]), "处理中...", "", "", gr.update(visible=False), "", "", args[-1]  
+      
+    # 调用原始处理函数  
+    result = process_image_inference(*args)  
+      
+    # 返回最终结果，移除淡化效果  
+    final_image = gr.update(value=result[0], elem_classes=["completed"])  
+    yield final_image, *result[1:]  
+  
+def create_docx_from_markdown(markdown_content, session_id, temp_dir):  
+    """将markdown内容转换为DOCX文件"""  
+    docx_path = os.path.join(temp_dir, f"document_{session_id}.docx")  
+    
+
+    # 1. 先用 Python 包住所有 <table>...</table>
+    markdown_content = wrap_html_tables(markdown_content) #有效，是表格化的关键步骤
+    #markdown_content = add_borders(markdown_content) # 没有实际效果
+    # 把三个及以上连续的 - 替换成 Word 分页符
+    markdown_content = re.sub(
+        r'^\s*-{3,}\s*$',          # 整行只有 3 个及以上 -
+        '\n```{=openxml}\n<w:p><w:r><w:br w:type="page"/></w:r></w:p>\n```\n',
+        markdown_content,
+        flags=re.MULTILINE
+    )
+    print(f"输出MD: {markdown_content}")
+    
+    # 获取脚本所在目录，保证 filter 文件能找到
+    filter_path = os.path.join(os.path.dirname(__file__), 'keep-html-table.lua')
+
+    # 如果包含 <table>，先转换；否则原样保留
+    #if '<table' in markdown_content.lower():
+    #    markdown_content = _convert_html_tables_to_md(markdown_content)
+
+    # 使用pypandoc将markdown转换为docx  
+    pypandoc.convert_text(  
+        markdown_content,   
+        'docx',   
+        format='markdown+raw_html+markdown_in_html_blocks',  
+        outputfile=docx_path,  
+        extra_args=[
+            f'--lua-filter={filter_path}'
+            # , '--reference-doc=template.docx'
+        ] #extra_args=['--reference-doc=template.docx']  # 可选：使用模板  
+    )
+
+    # 关键点4：后处理，为所有表格加边框线
+    _add_table_borders_docx(docx_path)
+
+    return docx_path
+
 # ==================== Gradio Interface ====================
 def create_gradio_interface():
     """Creates the Gradio interface"""
     
     # CSS styles, matching the reference style
     css = """
+
+    @font-face {
+        font-family: 'IBM Plex Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-stretch: normal;
+        src: url('http://ai.byfunds.com/hystatic/ibmplexsans/v22/lzAA.ttf') format('truetype');
+    }
+
+    @font-face {
+        font-family: 'IBM Plex Mono';
+        font-style: normal;
+        font-weight: 400;
+        src: url('http://ai.byfunds.com/hystatic/ibmplexmono/v19/n5ig.ttf') format('truetype');
+    }
+    body, .gradio-container {
+        font-family: 'IBM Plex Sans', sans-serif !important;
+    }
+    code, pre, .gradio-code {
+        font-family: 'IBM Plex Mono', monospace !important;
+    }
 
     #parse_button {
         background: #FF576D !important; /* !important 确保覆盖主题默认样式 */
@@ -515,48 +680,63 @@ def create_gradio_interface():
     #markdown_tabs {
         height: 100%;
     }
+
+    #result_image.processing {  
+        opacity: 0.5;  
+        filter: grayscale(50%);  
+        transition: opacity 0.3s ease, filter 0.3s ease;  
+    }  
+  
+    #result_image.completed {  
+        opacity: 1;  
+        filter: none;  
+        transition: opacity 0.3s ease, filter 0.3s ease;  
+    }  
     """
-    
-    with gr.Blocks(theme="ocean", css=css, title='dots.ocr') as demo:
+    theme = gr.themes.Ocean(
+        font=["IBM Plex Sans", "sans-serif"],
+        font_mono=["IBM Plex Mono", "monospace"]
+    )
+    with gr.Blocks(theme=theme, css=css, title='dots.ocr') as demo:
         session_state = gr.State(value=get_initial_session_state())
         
         # Title
         gr.HTML("""
             <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                <h1 style="margin: 0; font-size: 2em;">🔍 dots.ocr</h1>
+                <h1 style="margin: 0; font-size: 2em;">🔍 灵眸·PDF超级解析助手</h1>
             </div>
             <div style="text-align: center; margin-bottom: 10px;">
-                <em>Supports image/PDF layout analysis and structured output</em>
+                <em>对图像/PDF文件进行布局分析和结构化提取</em>
             </div>
         """)
         
         with gr.Row():
             # Left side: Input and Configuration
             with gr.Column(scale=1, elem_id="left-panel"):
-                gr.Markdown("### 📥 Upload & Select")
+                gr.Markdown("### 📥 文件上传")
                 file_input = gr.File(
-                    label="Upload PDF/Image", 
+                    label="上传PDF/图像文件", 
                     type="filepath", 
                     file_types=[".pdf", ".jpg", ".jpeg", ".png"],
                 )
                 
-                test_images = get_test_images()
-                test_image_input = gr.Dropdown(
-                    label="Or Select an Example",
-                    choices=[""] + test_images,
-                    value="",
-                )
+                #test_images = get_test_images()
+                #test_image_input = gr.Dropdown(
+                #    label="Or Select an Example",
+                #    choices=[""] + test_images,
+                #    value="",
+                #)
 
-                gr.Markdown("### ⚙️ Prompt & Actions")
+                gr.Markdown("### ⚙️ 工作模式")
                 prompt_mode = gr.Dropdown(
-                    label="Select Prompt",
+                    label="选择工作模式",
                     choices=["完全识别", "布局识别", "文字识别"],
                     value="完全识别",
                 )
                 
                 # Display current prompt content
                 prompt_display = gr.Textbox(
-                    label="Current Prompt Content",
+                    label="工作提示词预览",
                     value=dict_promptmode_to_prompt[list(dict_promptmode_to_prompt.keys())[0]],
                     lines=4,
                     max_lines=8,
@@ -565,19 +745,19 @@ def create_gradio_interface():
                 )
                 
                 with gr.Row():
-                    process_btn = gr.Button("🔍 Parse", variant="primary", scale=2, elem_id="parse_button")
-                    clear_btn = gr.Button("🗑️ Clear", variant="secondary", scale=1)
+                    process_btn = gr.Button("🔍 开始识别（每页30~60秒）", variant="primary", scale=2, elem_id="parse_button")
+                    #clear_btn = gr.Button("🗑️ 重置", variant="secondary", scale=1)
                 
-                with gr.Accordion("🛠️ Advanced Configuration", open=False):
+                with gr.Accordion("🛠️ 高级设置", open=False):
                     fitz_preprocess = gr.Checkbox(
-                        label="Enable fitz_preprocess for images", 
+                        label="启用图像文件“缩适预处理”工序", 
                         value=True,
-                        info="Processes image via a PDF-like pipeline (image->pdf->200dpi image). Recommended if your image DPI is low."
+                        info="以PDF模式处理图像文件(图像->pdf->200dpi大图像). 如果你的原图比较模糊建议启用."
                     )
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         server_ip = gr.Textbox(label="Server IP", value=DEFAULT_CONFIG['ip'])
                         server_port = gr.Number(label="Port", value=DEFAULT_CONFIG['port_vllm'], precision=0)
-                    with gr.Row():
+                    with gr.Row(visible=False):
                         min_pixels = gr.Number(label="Min Pixels", value=DEFAULT_CONFIG['min_pixels'], precision=0)
                         max_pixels = gr.Number(label="Max Pixels", value=DEFAULT_CONFIG['max_pixels'], precision=0)
             # Right side: Result Display
@@ -585,9 +765,9 @@ def create_gradio_interface():
                 with gr.Row():
                     # Result Image
                     with gr.Column(scale=3):
-                        gr.Markdown("### 👁️ File Preview")
+                        gr.Markdown("### 👁️ 预览")
                         result_image = gr.Image(
-                            label="Layout Preview",
+                            label="布局预览",
                             visible=True,
                             height=800,
                             show_label=False
@@ -595,27 +775,27 @@ def create_gradio_interface():
                         
                         # Page navigation (shown during PDF preview)
                         with gr.Row():
-                            prev_btn = gr.Button("⬅ Previous", size="sm")
+                            prev_btn = gr.Button("⬅ 上一页", size="sm")
                             page_info = gr.HTML(
                                 value="<div id='page_info_box'>0 / 0</div>", 
                                 elem_id="page_info_html"
                             )
-                            next_btn = gr.Button("Next ➡", size="sm")
+                            next_btn = gr.Button("下一页 ➡", size="sm")
                         
                         # Info Display
                         info_display = gr.Markdown(
-                            "Waiting for processing results...",
+                            "等待接收和处理上传文件...",
                             elem_id="info_box"
                         )
                     
                     # Markdown Result
                     with gr.Column(scale=3):
-                        gr.Markdown("### ✔️ Result Display")
+                        gr.Markdown("### ✔️ 识别结果")
                         
                         with gr.Tabs(elem_id="markdown_tabs"):
-                            with gr.TabItem("Markdown Render Preview"):
+                            with gr.TabItem("Markdown渲染预览"):
                                 md_output = gr.Markdown(
-                                    "## Please click the parse button to parse or select for single-task recognition...",
+                                    "## 请点击识别按钮...",
                                     max_height=600,
                                     latex_delimiters=[
                                         {"left": "$$", "right": "$$", "display": True},
@@ -625,7 +805,7 @@ def create_gradio_interface():
                                     elem_id="markdown_output"
                                 )
                             
-                            with gr.TabItem("Markdown Raw Text"):
+                            with gr.TabItem("Markdown Raw Text", visible=False):
                                 md_raw_output = gr.Textbox(
                                     value="🕐 Waiting for parsing result...",
                                     label="Markdown Raw Text",
@@ -636,7 +816,7 @@ def create_gradio_interface():
                                     show_label=False
                                 )
                             
-                            with gr.TabItem("Current Page JSON"):
+                            with gr.TabItem("Current Page JSON", visible=False):
                                 current_page_json = gr.Textbox(
                                     value="🕐 Waiting for parsing result...",
                                     label="Current Page JSON",
@@ -650,7 +830,7 @@ def create_gradio_interface():
                 # Download Button
                 with gr.Row():
                     download_btn = gr.DownloadButton(
-                        "⬇️ Download Results",
+                        "⬇️ 导出DOCX下载文件",
                         visible=False
                     )
         
@@ -670,12 +850,12 @@ def create_gradio_interface():
         )
         
         # Also handle test image selection
-        test_image_input.change(
+        #test_image_input.change(
             # fn=lambda path, state: load_file_for_preview(path, state),
-            fn=load_file_for_preview,
-            inputs=[test_image_input, session_state],
-            outputs=[result_image, page_info, session_state]
-        )
+        #    fn=load_file_for_preview,
+        #    inputs=[test_image_input, session_state],
+        #    outputs=[result_image, page_info, session_state]
+        #)
 
         prev_btn.click(
             fn=lambda s: turn_page("prev", s),
@@ -692,7 +872,7 @@ def create_gradio_interface():
         process_btn.click(
             fn=process_image_inference,
             inputs=[
-                session_state, test_image_input, file_input,
+                session_state, file_input, #test_image_input,
                 prompt_mode, server_ip, server_port, min_pixels, max_pixels, 
                 fitz_preprocess
             ],
@@ -702,15 +882,15 @@ def create_gradio_interface():
             ]
         )
         
-        clear_btn.click(
-            fn=clear_all_data,
-            inputs=[session_state],
-            outputs=[
-                file_input, test_image_input,
-                result_image, info_display, md_output, md_raw_output,
-                download_btn, page_info, current_page_json, session_state
-            ]
-        )
+        #clear_btn.click(
+        #    fn=clear_all_data,
+        #    inputs=[session_state],
+        #    outputs=[
+        #        file_input, #test_image_input,
+        #        result_image, info_display, md_output, md_raw_output,
+        #        download_btn, page_info, current_page_json, session_state
+        #    ]
+        #)
     
     return demo
 
@@ -722,5 +902,6 @@ if __name__ == "__main__":
     demo.queue().launch(
         server_name="0.0.0.0", 
         server_port=port, 
-        debug=True
+        debug=True,
+        root_path="/dotsocr"
     )
