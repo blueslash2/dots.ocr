@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from tqdm import tqdm
 from multiprocessing.pool import ThreadPool, Pool
 import argparse
@@ -250,12 +251,27 @@ class DotsOCRParser:
         return result
     
     def parse_image(self, input_path, filename, prompt_mode, save_dir, bbox=None, fitz_preprocess=False):
+        # 开始时间统计
+        start_time = time.time()
+        
         origin_image = fetch_image(input_path)
         result = self._parse_single_image(origin_image, prompt_mode, save_dir, filename, source="image", bbox=bbox, fitz_preprocess=fitz_preprocess)
         result['file_path'] = input_path
+        
+        # 计算处理时间
+        end_time = time.time()
+        total_time = end_time - start_time
+        result['processing_time'] = total_time
+        
+        # 打印图像处理时间到控制台
+        print(f"Image processing time: {total_time:.2f} seconds")
+        
         return [result]
         
     def parse_pdf(self, input_path, filename, prompt_mode, save_dir):
+        # 开始时间统计
+        start_time = time.time()
+        
         print(f"loading pdf: {input_path}")
         images_origin = load_images_from_pdf(input_path, dpi=self.dpi)
         total_pages = len(images_origin)
@@ -289,15 +305,30 @@ class DotsOCRParser:
         results.sort(key=lambda x: x["page_no"])
         for i in range(len(results)):
             results[i]['file_path'] = input_path
+            
+        # 计算PDF处理总时间
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # 为每页结果添加处理时间
+        for result in results:
+            result['processing_time'] = total_time
+        
+        # 打印PDF总处理时间到控制台
+        print(f"PDF processing time: {total_time:.2f} seconds")
+        
         return results
 
-    def parse_file(self, 
-        input_path, 
-        output_dir="", 
+    def parse_file(self,
+        input_path,
+        output_dir="",
         prompt_mode="完全识别",
         bbox=None,
         fitz_preprocess=False
         ):
+        # 开始时间统计
+        start_time = time.time()
+        
         output_dir = output_dir or self.output_dir
         output_dir = os.path.abspath(output_dir)
         filename, file_ext = os.path.splitext(os.path.basename(input_path))
@@ -311,11 +342,22 @@ class DotsOCRParser:
         else:
             raise ValueError(f"file extension {file_ext} not supported, supported extensions are {image_extensions} and pdf")
         
+        # 计算总处理时间
+        end_time = time.time()
+        total_time = end_time - start_time
+        
+        # 将处理时间添加到结果中
+        for result in results:
+            result['processing_time'] = total_time
+        
         print(f"Parsing finished, results saving to {save_dir}")
         with open(os.path.join(output_dir, os.path.basename(filename)+'.jsonl'), 'w', encoding="utf-8") as w:
             for result in results:
                 w.write(json.dumps(result, ensure_ascii=False) + '\n')
 
+        # 打印总处理时间到控制台
+        print(f"Total processing time: {total_time:.2f} seconds")
+        
         return results
 
 

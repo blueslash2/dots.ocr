@@ -9,6 +9,7 @@ import json
 import os
 import io
 import tempfile
+import time
 from PIL import Image
 import requests
 
@@ -109,7 +110,7 @@ def get_image_input():
 
 
 
-def process_and_display_results(output: str, image: Image.Image, config: dict):
+def process_and_display_results(output: str, image: Image.Image, config: dict, processing_time: float = 0):
     """Process and display inference results"""
     prompt, response = output['prompt'], output['response']
     
@@ -133,7 +134,15 @@ def process_and_display_results(output: str, image: Image.Image, config: dict):
             min_pixels=config['min_pixels'],
             max_pixels=config['max_pixels']
         )
+        
+        # 显示处理时间
         st.markdown('---')
+        if processing_time > 0:
+            if processing_time > 60:
+                time_display = f"{processing_time/60:.1f} 分钟"
+            else:
+                time_display = f"{processing_time:.1f} 秒"
+            st.write(f'处理时间: {time_display}')
         st.write(f'Input Dimensions: {input_width} x {input_height}')
         # st.write(f'Prompt: {prompt}')
         # st.markdown(f'模型原始输出: <span style="color:blue">{result}</span>', unsafe_allow_html=True)
@@ -148,9 +157,9 @@ def process_and_display_results(output: str, image: Image.Image, config: dict):
         with col1:
             # st.markdown("##### 可视化结果")
             new_image = draw_layout_on_image(
-                image, cells, 
+                image, cells,
                 resized_height=None, resized_width=None,
-                # text_key='text', 
+                # text_key='text',
                 fill_bbox=True, draw_bbox=True
             )
             st.markdown('##### Visualization Result')
@@ -201,6 +210,8 @@ def main():
     output = None
     # Inference button
     if start_button:
+        # 开始计时
+        start_time = time.time()
         with st.spinner(f"Inferring... Server: {config['ip']}:{config['port']}"):
             
             response = inference_with_vllm(
@@ -211,12 +222,15 @@ def main():
                 'prompt': prompt,
                 'response': response,
             }
+        # 结束计时
+        end_time = time.time()
+        processing_time = end_time - start_time
     else:
         st.image(processed_image, width=500)
 
     # Process results
     if output:
-        process_and_display_results(output, processed_image, config)
+        process_and_display_results(output, processed_image, config, processing_time)
 
 if __name__ == "__main__":
     main()

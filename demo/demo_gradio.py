@@ -14,12 +14,13 @@ import base64
 import zipfile
 import uuid
 import re
+import time
 from pathlib import Path
 from PIL import Image
 import requests
 import shutil # Import shutil for cleanup
 os.environ['PYPANDOC_PANDOC'] = '/usr/local/bin/pandoc'
-import pypandoc  
+import pypandoc
 
 # Local tool imports
 from dots_ocr.utils import dict_promptmode_to_prompt
@@ -217,6 +218,7 @@ def parse_image_with_high_level_api(parser, image, prompt_mode, fitz_preprocess=
             'result_paths': result,
             'input_width': result.get('input_width', 0),
             'input_height': result.get('input_height', 0),
+            'processing_time': result.get('processing_time', 0),
         }
     except Exception as e:
         if os.path.exists(temp_dir):
@@ -255,7 +257,8 @@ def parse_pdf_with_high_level_api(parser, pdf_path, prompt_mode):
                 'layout_image': None,
                 'cells_data': None,
                 'md_content': None,
-                'filtered': False
+                'filtered': False,
+                'processing_time': result.get('processing_time', i)
             }
             
             # Read the layout image
@@ -350,7 +353,21 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
             })
             
             total_elements = len(pdf_result['combined_cells_data'])
-            info_text = f"**PDF文件数据:**\n- 总页数: {pdf_result['total_pages']}\n- 总分块数: {total_elements}\n- Session ID: {pdf_result['session_id']}"
+            
+            # 添加处理时间信息
+            processing_time = 0
+            if pdf_result['parsed_results']:
+                # 取第一个结果的时间作为参考（实际应该取总时间）
+                print(f"PDF results: {pdf_result} \n===")
+                processing_time = pdf_result['parsed_results'][0].get('processing_time', 0)
+            
+            # 格式化时间显示
+            if processing_time > 60:
+                time_display = f"{processing_time/60:.1f} 分钟"
+            else:
+                time_display = f"{processing_time:.1f} 秒"
+                
+            info_text = f"**PDF文件数据:**\n- 总页数: {pdf_result['total_pages']}\n- 总分块数: {total_elements}\n- 处理时间: {time_display}\n- Session ID: {pdf_result['session_id']}"
             
             current_page_layout_image = preview_image
             current_page_json = ""
@@ -363,7 +380,7 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
                         current_page_json = json.dumps(first_result['cells_data'], ensure_ascii=False, indent=2)
                     except:
                         current_page_json = str(first_result['cells_data'])
-
+            
             #download_zip_path = None
             #if pdf_result['temp_dir']:
             #    download_zip_path = os.path.join(pdf_result['temp_dir'], f"layout_results_{pdf_result['session_id']}.zip")
@@ -371,14 +388,14 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
             #        for root, _, files in os.walk(pdf_result['temp_dir']):
             #            for file in files:
             #                if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), pdf_result['temp_dir']))
-            download_docx_path = None  
-            if pdf_result['combined_md_content']:  
-                download_docx_path = create_docx_from_markdown(  
-                    pdf_result['combined_md_content'],   
-                    pdf_result['session_id'],   
-                    pdf_result['temp_dir']  
-                ) 
-
+            download_docx_path = None
+            if pdf_result['combined_md_content']:
+                download_docx_path = create_docx_from_markdown(
+                    pdf_result['combined_md_content'],
+                    pdf_result['session_id'],
+                    pdf_result['temp_dir']
+                )
+            
             return (
                 current_page_layout_image, info_text, pdf_result['combined_md_content'] or "No markdown content generated",
                 pdf_result['combined_md_content'] or "No markdown content generated",
@@ -393,7 +410,15 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
             parse_result = parse_image_with_high_level_api(dots_parser, image, prompt_mode, fitz_preprocess)
             
             if parse_result['filtered']:
-                 info_text = f"**Image Information:**\n- Original Size: {original_image.width} x {original_image.height}\n- Processing: JSON parsing failed, using cleaned text output\n- Server: {current_config['ip']}:{current_config['port_vllm']}\n- Session ID: {parse_result['session_id']}"
+                 # 添加处理时间信息
+                 processing_time = parse_result.get('processing_time', 0)
+                 # 格式化时间显示
+                 if processing_time > 60:
+                     time_display = f"{processing_time/60:.1f} 分钟"
+                 else:
+                     time_display = f"{processing_time:.1f} 秒"
+                     
+                 info_text = f"**Image Information:**\n- Original Size: {original_image.width} x {original_image.height}\n- Processing: JSON parsing failed, using cleaned text output\n- Server: {current_config['ip']}:{current_config['port_vllm']}\n- 处理时间: {time_display}\n- Session ID: {parse_result['session_id']}"
                  processing_results.update({
                      'original_image': original_image, 'markdown_content': parse_result['md_content'],
                      'temp_dir': parse_result['temp_dir'], 'session_id': parse_result['session_id'],
@@ -409,8 +434,16 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
                 'result_paths': parse_result['result_paths']
             })
             
+            # 添加处理时间信息
+            processing_time = parse_result.get('processing_time', 0)
+            # 格式化时间显示
+            if processing_time > 60:
+                time_display = f"{processing_time/60:.1f} 分钟"
+            else:
+                time_display = f"{processing_time:.1f} 秒"
+                
             num_elements = len(parse_result['cells_data']) if parse_result['cells_data'] else 0
-            info_text = f"**Image Information:**\n- Original Size: {original_image.width} x {original_image.height}\n- Model Input Size: {parse_result['input_width']} x {parse_result['input_height']}\n- Server: {current_config['ip']}:{current_config['port_vllm']}\n- Detected {num_elements} layout elements\n- Session ID: {parse_result['session_id']}"
+            info_text = f"**Image Information:**\n- Original Size: {original_image.width} x {original_image.height}\n- Model Input Size: {parse_result['input_width']} x {parse_result['input_height']}\n- Server: {current_config['ip']}:{current_config['port_vllm']}\n- Detected {num_elements} layout elements\n- 处理时间: {time_display}\n- Session ID: {parse_result['session_id']}"
             
             current_json = json.dumps(parse_result['cells_data'], ensure_ascii=False, indent=2) if parse_result['cells_data'] else ""
             
@@ -421,14 +454,14 @@ def process_image_inference(session_state, file_input, #test_image_input, file_i
             #        for root, _, files in os.walk(parse_result['temp_dir']):
             #            for file in files:
             #                if not file.endswith('.zip'): zipf.write(os.path.join(root, file), os.path.relpath(os.path.join(root, file), parse_result['temp_dir']))
-            download_docx_path = None  
-            if parse_result['md_content']:  
-                download_docx_path = create_docx_from_markdown(  
-                    parse_result['md_content'],   
-                    parse_result['session_id'],   
-                    parse_result['temp_dir']  
+            download_docx_path = None
+            if parse_result['md_content']:
+                download_docx_path = create_docx_from_markdown(
+                    parse_result['md_content'],
+                    parse_result['session_id'],
+                    parse_result['temp_dir']
                 )
-
+            
             return (
                 parse_result['layout_image'], info_text, parse_result['md_content'] or "No markdown content generated",
                 md_content_raw, gr.update(value=download_zip_path, visible=bool(download_zip_path)),
